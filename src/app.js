@@ -7,6 +7,7 @@ const config = require('./config/env');
 const authRoutes = require('./routes/authRoutes');
 const productRoutes = require('./routes/productRoutes');
 const uploadRoutes = require('./routes/uploadRoutes');
+const contactRoutes = require('./routes/contactRoutes');
 const { getCategories } = require('./controllers/productController');
 const errorHandler = require('./middleware/errorHandler');
 
@@ -80,6 +81,7 @@ app.get('/api/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/upload', uploadRoutes);
+app.use('/api/contact', contactRoutes);
 app.get('/api/categories', getCategories);
 
 // 404 Route handler
