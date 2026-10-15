@@ -1,19 +1,29 @@
 const cloudinary = require('cloudinary').v2;
 const config = require('./env');
 
+const clean = (val) => (val || '').trim().replace(/^["']|["']$/g, '').trim();
+
+const cloudName = clean(config.cloudinary.cloudName);
+const apiKey = clean(config.cloudinary.apiKey);
+const apiSecret = clean(config.cloudinary.apiSecret);
+const cloudinaryUrl = clean(config.cloudinary.url);
+
 const isCloudinaryConfigured = Boolean(
-  config.cloudinary.cloudName &&
-  config.cloudinary.apiKey &&
-  config.cloudinary.apiSecret
+  (cloudName && apiKey && apiSecret) || cloudinaryUrl
 );
 
 if (isCloudinaryConfigured) {
-  cloudinary.config({
-    cloud_name: config.cloudinary.cloudName,
-    api_key: config.cloudinary.apiKey,
-    api_secret: config.cloudinary.apiSecret,
-    secure: true,
-  });
+  if (cloudinaryUrl) {
+    process.env.CLOUDINARY_URL = cloudinaryUrl;
+  }
+  if (cloudName && apiKey && apiSecret) {
+    cloudinary.config({
+      cloud_name: cloudName,
+      api_key: apiKey,
+      api_secret: apiSecret,
+      secure: true,
+    });
+  }
   console.log('Cloudinary persistent cloud storage initialized.');
 } else {
   console.log('Notice: Cloudinary credentials not fully set; using local storage fallback for uploads.');

@@ -26,7 +26,8 @@ const saveBufferLocally = (file, req) => {
 
   // Return full URL or path
   const host = req.get('host');
-  const protocol = req.protocol;
+  const isSecure = req.secure || req.headers['x-forwarded-proto'] === 'https' || host?.includes('onrender.com');
+  const protocol = isSecure ? 'https' : req.protocol;
   const fullUrl = `${protocol}://${host}/uploads/${filename}`;
 
   return {

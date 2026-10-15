@@ -14,9 +14,10 @@ const config = {
   adminName: process.env.ADMIN_NAME || 'Cobolt Administrator',
   corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:3000',
   cloudinary: {
-    cloudName: process.env.CLOUDINARY_CLOUD_NAME || '',
-    apiKey: process.env.CLOUDINARY_API_KEY || '',
-    apiSecret: process.env.CLOUDINARY_API_SECRET || '',
+    cloudName: (process.env.CLOUDINARY_CLOUD_NAME || '').trim().replace(/^["']|["']$/g, '').trim(),
+    apiKey: (process.env.CLOUDINARY_API_KEY || '').trim().replace(/^["']|["']$/g, '').trim(),
+    apiSecret: (process.env.CLOUDINARY_API_SECRET || '').trim().replace(/^["']|["']$/g, '').trim(),
+    url: (process.env.CLOUDINARY_URL || '').trim().replace(/^["']|["']$/g, '').trim(),
   },
 };
 
