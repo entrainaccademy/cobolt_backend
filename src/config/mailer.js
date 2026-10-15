@@ -1,7 +1,7 @@
 const nodemailer = require('nodemailer');
 const config = require('./env');
 
-const receiverEmail = process.env.INQUIRY_RECEIVER_EMAIL || 'tpkasimvlr@gmail.com';
+const receiverEmail = process.env.INQUIRY_RECEIVER_EMAIL || 'infocobolt123@gmail.com';
 
 /**
  * Configure Nodemailer transporter based on environment variables
