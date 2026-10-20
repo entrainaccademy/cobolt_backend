@@ -1,4 +1,54 @@
+const mongoose = require('mongoose');
 const Product = require('../models/Product');
+
+/**
+ * Safely escape characters that have special meaning in regular expressions
+ */
+const escapeRegex = (string) => {
+  if (typeof string !== 'string') return '';
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+};
+
+/**
+ * Unified helper to find a product by ID, slug, or MongoDB ObjectId.
+ * Handles IDs containing regex special characters (e.g. parentheses, brackets, plus signs)
+ * and case insensitivity safely.
+ */
+const findProductByIdOrSlug = async (paramId) => {
+  if (!paramId) return null;
+  const decodedId = decodeURIComponent(paramId).trim();
+
+  // 1. Exact match on 'id' (preserves special characters like parentheses verbatim)
+  let product = await Product.findOne({ id: decodedId });
+  if (product) return product;
+
+  // 2. Case-insensitive match on 'id' with safely escaped regex
+  const escaped = escapeRegex(decodedId);
+  product = await Product.findOne({
+    id: { $regex: new RegExp(`^${escaped}$`, 'i') },
+  });
+  if (product) return product;
+
+  // 3. Match by MongoDB ObjectId if valid hex
+  if (mongoose.Types.ObjectId.isValid(decodedId) && /^[0-9a-fA-F]{24}$/.test(decodedId)) {
+    product = await Product.findById(decodedId);
+    if (product) return product;
+  }
+
+  // 4. Raw paramId fallback if distinct from decodedId
+  if (paramId !== decodedId) {
+    const rawParam = paramId.trim();
+    product = await Product.findOne({ id: rawParam });
+    if (product) return product;
+
+    if (mongoose.Types.ObjectId.isValid(rawParam) && /^[0-9a-fA-F]{24}$/.test(rawParam)) {
+      product = await Product.findById(rawParam);
+      if (product) return product;
+    }
+  }
+
+  return null;
+};
 
 /**
  * Helper to generate a clean URL slug from product name
@@ -51,7 +101,7 @@ const getAllProducts = async (req, res, next) => {
 
     // Search query
     if (search && search.trim() !== '') {
-      const searchRegex = new RegExp(search.trim(), 'i');
+      const searchRegex = new RegExp(escapeRegex(search.trim()), 'i');
       filter.$or = [
         { name: searchRegex },
         { id: searchRegex },
@@ -61,11 +111,11 @@ const getAllProducts = async (req, res, next) => {
       ];
     }
 
-    // Sorting
-    let sortOptions = { order: 1, createdAt: 1 };
+    // Sorting: default to most recently updated / added products first
+    let sortOptions = { updatedAt: -1, createdAt: -1 };
     if (sort) {
-      if (sort === 'newest') sortOptions = { createdAt: -1 };
-      if (sort === 'oldest') sortOptions = { createdAt: 1 };
+      if (sort === 'newest') sortOptions = { updatedAt: -1, createdAt: -1 };
+      if (sort === 'oldest') sortOptions = { createdAt: 1, updatedAt: 1 };
       if (sort === 'name-asc') sortOptions = { name: 1 };
       if (sort === 'name-desc') sortOptions = { name: -1 };
     }
@@ -112,17 +162,7 @@ const getProductById = async (req, res, next) => {
       });
     }
 
-    const decodedId = decodeURIComponent(paramId).trim();
-
-    // Try finding by exact id / slug (case-insensitive regex)
-    let product = await Product.findOne({
-      id: { $regex: new RegExp(`^${decodedId}$`, 'i') },
-    });
-
-    // If not found and paramId looks like a Mongo ObjectId, try _id
-    if (!product && paramId.match(/^[0-9a-fA-F]{24}$/)) {
-      product = await Product.findById(paramId);
-    }
+    const product = await findProductByIdOrSlug(paramId);
 
     if (!product) {
       return res.status(404).json({
@@ -197,6 +237,8 @@ const createProduct = async (req, res, next) => {
       accessories,
       isAvailable,
       isFeatured,
+      price,
+      offerPrice,
       order,
     } = req.body;
 
@@ -256,6 +298,15 @@ const createProduct = async (req, res, next) => {
         .map((a) => a.trim());
     }
 
+    const parsedPrice =
+      price !== undefined && price !== null && price !== '' && !isNaN(Number(price))
+        ? Number(price)
+        : null;
+    const parsedOfferPrice =
+      offerPrice !== undefined && offerPrice !== null && offerPrice !== '' && !isNaN(Number(offerPrice))
+        ? Number(offerPrice)
+        : null;
+
     const newProduct = new Product({
       id: productId,
       name: name.trim(),
@@ -266,9 +317,13 @@ const createProduct = async (req, res, next) => {
       description: (description || '').trim(),
       specs: formattedSpecs,
       accessories: formattedAccessories,
+      price: parsedPrice,
+      offerPrice: parsedOfferPrice,
       isAvailable: typeof isAvailable === 'boolean' ? isAvailable : true,
       isFeatured: typeof isFeatured === 'boolean' ? isFeatured : false,
       order: typeof order === 'number' ? order : 0,
+      createdAt: new Date(),
+      updatedAt: new Date(),
     });
 
     const saved = await newProduct.save();
@@ -291,15 +346,7 @@ const createProduct = async (req, res, next) => {
 const updateProduct = async (req, res, next) => {
   try {
     const paramId = req.params.id;
-    const decodedId = decodeURIComponent(paramId).trim();
-
-    let product = await Product.findOne({
-      id: { $regex: new RegExp(`^${decodedId}$`, 'i') },
-    });
-
-    if (!product && paramId.match(/^[0-9a-fA-F]{24}$/)) {
-      product = await Product.findById(paramId);
-    }
+    const product = await findProductByIdOrSlug(paramId);
 
     if (!product) {
       return res.status(404).json({
@@ -320,6 +367,8 @@ const updateProduct = async (req, res, next) => {
       accessories,
       isAvailable,
       isFeatured,
+      price,
+      offerPrice,
       order,
     } = req.body;
 
@@ -376,6 +425,14 @@ const updateProduct = async (req, res, next) => {
     if (typeof isFeatured === 'boolean') product.isFeatured = isFeatured;
     if (typeof order === 'number') product.order = order;
 
+    if (typeof price !== 'undefined') {
+      product.price = price !== null && price !== '' && !isNaN(Number(price)) ? Number(price) : null;
+    }
+    if (typeof offerPrice !== 'undefined') {
+      product.offerPrice = offerPrice !== null && offerPrice !== '' && !isNaN(Number(offerPrice)) ? Number(offerPrice) : null;
+    }
+
+    product.updatedAt = new Date();
     const updated = await product.save();
 
     res.status(200).json({
@@ -396,15 +453,7 @@ const updateProduct = async (req, res, next) => {
 const updateProductStatus = async (req, res, next) => {
   try {
     const paramId = req.params.id;
-    const decodedId = decodeURIComponent(paramId).trim();
-
-    let product = await Product.findOne({
-      id: { $regex: new RegExp(`^${decodedId}$`, 'i') },
-    });
-
-    if (!product && paramId.match(/^[0-9a-fA-F]{24}$/)) {
-      product = await Product.findById(paramId);
-    }
+    const product = await findProductByIdOrSlug(paramId);
 
     if (!product) {
       return res.status(404).json({
@@ -422,6 +471,7 @@ const updateProductStatus = async (req, res, next) => {
       product.isFeatured = isFeatured;
     }
 
+    product.updatedAt = new Date();
     await product.save();
 
     res.status(200).json({
@@ -442,15 +492,7 @@ const updateProductStatus = async (req, res, next) => {
 const manageProductPhotos = async (req, res, next) => {
   try {
     const paramId = req.params.id;
-    const decodedId = decodeURIComponent(paramId).trim();
-
-    let product = await Product.findOne({
-      id: { $regex: new RegExp(`^${decodedId}$`, 'i') },
-    });
-
-    if (!product && paramId.match(/^[0-9a-fA-F]{24}$/)) {
-      product = await Product.findById(paramId);
-    }
+    const product = await findProductByIdOrSlug(paramId);
 
     if (!product) {
       return res.status(404).json({
@@ -494,6 +536,7 @@ const manageProductPhotos = async (req, res, next) => {
       }
     }
 
+    product.updatedAt = new Date();
     await product.save();
 
     res.status(200).json({
@@ -514,15 +557,7 @@ const manageProductPhotos = async (req, res, next) => {
 const deleteProduct = async (req, res, next) => {
   try {
     const paramId = req.params.id;
-    const decodedId = decodeURIComponent(paramId).trim();
-
-    let product = await Product.findOne({
-      id: { $regex: new RegExp(`^${decodedId}$`, 'i') },
-    });
-
-    if (!product && paramId.match(/^[0-9a-fA-F]{24}$/)) {
-      product = await Product.findById(paramId);
-    }
+    const product = await findProductByIdOrSlug(paramId);
 
     if (!product) {
       return res.status(404).json({
@@ -537,6 +572,7 @@ const deleteProduct = async (req, res, next) => {
       success: true,
       message: `Product '${product.name}' (${product.id}) deleted successfully.`,
       deletedId: product.id,
+      deletedObjectId: product._id,
     });
   } catch (error) {
     next(error);

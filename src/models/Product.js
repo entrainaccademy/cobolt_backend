@@ -57,6 +57,14 @@ const ProductSchema = new mongoose.Schema(
       type: [String],
       default: [],
     },
+    price: {
+      type: Number,
+      default: null,
+    },
+    offerPrice: {
+      type: Number,
+      default: null,
+    },
     isAvailable: {
       type: Boolean,
       default: true,
